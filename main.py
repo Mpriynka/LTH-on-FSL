@@ -47,7 +47,7 @@ def get_dataset(args, mode='train'):
             transforms.ToTensor(),
             transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
         ])
-        return CIFARFS(args.data_root, mode=mode, transform=transform)
+        return CIFARFS(os.path.join(args.data_root, 'cifar-fs'), mode=mode, transform=transform)
     elif args.dataset == 'mini-imagenet':
         # MiniImageNet is usually resized to 84x84
         transform = transforms.Compose([
@@ -55,7 +55,7 @@ def get_dataset(args, mode='train'):
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
-        return MiniImageNet(args.data_root, mode=mode, transform=transform)
+        return MiniImageNet(os.path.join(args.data_root, 'mini-imagenet'), mode=mode, transform=transform)
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
 
