@@ -67,7 +67,6 @@ def main():
     parser.add_argument('--method', type=str, default='protonet', choices=['pretrain', 'protonet'])
     parser.add_argument('--prune_rate', type=float, default=0.0, help='Sparsity level (e.g. 0.5 for 50%%)')
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--weight_decay', type=float, default=5e-4)
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
