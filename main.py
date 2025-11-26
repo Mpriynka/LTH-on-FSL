@@ -27,7 +27,7 @@ class Logger(object):
 from backbones.conv4 import Conv4
 from backbones.resnet12 import ResNet12
 from utils.dataloader import CIFARFS, MiniImageNet, CategoriesSampler
-from fsl_methods.pretrain import train_pretrain, eval_pretrain
+from fsl_methods.pretrain import train_pretrain
 from fsl_methods.protonet import train_protonet, eval_protonet
 from prune.prune import get_masks, apply_masks, rewind_weights, check_sparsity
 
@@ -47,7 +47,7 @@ def get_dataset(args, mode='train'):
             transforms.ToTensor(),
             transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
         ])
-        return CIFARFS(os.path.join(args.data_root, 'cifar-fs'), mode=mode, transform=transform)
+        return CIFARFS(os.path.join(args.data_root, 'cifar-fs'), mode=mode, transform=transform), 64
     elif args.dataset == 'mini-imagenet':
         # MiniImageNet is usually resized to 84x84
         transform = transforms.Compose([
@@ -55,7 +55,7 @@ def get_dataset(args, mode='train'):
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
-        return MiniImageNet(os.path.join(args.data_root, 'mini-imagenet'), mode=mode, transform=transform)
+        return MiniImageNet(os.path.join(args.data_root, 'mini-imagenet'), mode=mode, transform=transform), 64
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
 
@@ -109,11 +109,35 @@ def main():
     
     # 2. Train Dense Model
     print("Training Dense Model...")
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
     
-    train_set = get_dataset(args, 'train')
-    val_set = get_dataset(args, 'val')
+    train_set, num_classes = get_dataset(args, 'train')
+    val_set, _ = get_dataset(args, 'val')
     
+    # Initialize Classifier for Pretrain
+    classifier = None
+    if args.method == 'pretrain':
+        # ResNet12 output dim is 640, Conv4 is 64*5*5=1600 (usually flattened)
+        # Assuming ResNet12 for now as per user request, but let's be safe
+        # For Conv4 usually output is 64 channels, often pooled. 
+        # Let's check backbone output dim. 
+        # For now, assuming ResNet12 (640) or Conv4 (64).
+        # A safer way is to check model.fc.in_features if it exists, or run a dummy input.
+        # Given the code, ResNet12 has self.fc = nn.Linear(640, feature_dim). 
+        # But we want the features BEFORE the final FC if we are doing metric learning later?
+        # Actually for pretrain, we usually replace the head.
+        # Let's assume ResNet12 output is 640.
+        feat_dim = 640 if args.backbone == 'resnet12' else 64*5*5 # Conv4 usually 64*5*5 if not pooled
+        if args.backbone == 'conv4':
+             feat_dim = 1600 # 64 * 5 * 5 for 84x84? No CIFAR is 32x32. 
+             # Conv4 on 32x32: 32 -> 16 -> 8 -> 4 -> 2. 64*2*2 = 256?
+             # Let's stick to ResNet12 as user requested.
+             pass
+        
+        classifier = torch.nn.Linear(feat_dim, num_classes).to(device)
+        optimizer = optim.Adam(list(model.parameters()) + list(classifier.parameters()), lr=args.lr)
+    else:
+        optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
     best_dense_acc = 0.0
     
     if args.method == 'protonet':
@@ -139,17 +163,20 @@ def main():
             
     elif args.method == 'pretrain':
         train_loader = DataLoader(train_set, batch_size=64, shuffle=True, num_workers=4)
-        val_loader = DataLoader(val_set, batch_size=64, shuffle=False, num_workers=4)
+        # Validation for pretrain should ALSO be episodic (ProtoNet style) to match FSL setting
+        val_sampler = CategoriesSampler(val_set.labels, args.episodes, args.n_way, args.k_shot + args.q_query)
+        val_loader = DataLoader(val_set, batch_sampler=val_sampler, num_workers=4)
         
         for epoch in range(1, args.epochs + 1):
-            train_loss = train_pretrain(model, train_loader, optimizer, epoch, device)
-            val_acc = eval_pretrain(model, val_loader, device)
+            train_loss = train_pretrain(model, classifier, train_loader, optimizer, epoch, device)
+            # Use eval_protonet for validation!
+            val_acc = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
             print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.4f}")
             
             # Log to CSV
             with open(csv_file, 'a', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([epoch, 'dense', train_loss, 0.0, val_acc]) # Train acc 0.0 for pretrain if not available
+                writer.writerow([epoch, 'dense', train_loss, 0.0, val_acc]) 
             
             # Save Best
             if val_acc > best_dense_acc:
@@ -172,7 +199,11 @@ def main():
         
         # 5. Retrain Sparse Model
         print("Retraining Sparse Model...")
-        optimizer = optim.Adam(model.parameters(), lr=args.lr) # Reset optimizer
+        if args.method == 'pretrain':
+             # Re-init optimizer with classifier
+             optimizer = optim.Adam(list(model.parameters()) + list(classifier.parameters()), lr=args.lr)
+        else:
+             optimizer = optim.Adam(model.parameters(), lr=args.lr) # Reset optimizer
         best_sparse_acc = 0.0
         
         for epoch in range(1, args.epochs + 1):
@@ -189,9 +220,9 @@ def main():
                     writer.writerow([epoch, 'sparse', train_loss, train_acc, val_acc])
 
             elif args.method == 'pretrain':
-                train_loss = train_pretrain(model, train_loader, optimizer, epoch, device)
+                train_loss = train_pretrain(model, classifier, train_loader, optimizer, epoch, device)
                 apply_masks(model, masks)
-                val_acc = eval_pretrain(model, val_loader, device)
+                val_acc = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
                 print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.4f}")
                 
                 # Log to CSV
