@@ -79,12 +79,17 @@ def train_protonet(model, train_loader, optimizer, epoch, n_way, k_shot, q_query
 
 def eval_protonet(model, test_loader, n_way, k_shot, q_query, device):
     model.eval()
-    total_acc = 0
+    accs = []
     
     with torch.no_grad():
         for data, _ in test_loader:
             data = data.to(device)
             _, acc = protonet_loss(model, data, n_way, k_shot, q_query, device)
-            total_acc += acc.item()
+            accs.append(acc.item())
             
-    return total_acc / len(test_loader)
+    accs = torch.tensor(accs)
+    mean = accs.mean().item() * 100
+    std = accs.std().item() * 100
+    ci = 1.96 * std / (len(accs) ** 0.5)
+            
+    return mean, ci

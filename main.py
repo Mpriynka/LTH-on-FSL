@@ -75,7 +75,7 @@ def main():
     parser.add_argument('--n_way', type=int, default=5)
     parser.add_argument('--k_shot', type=int, default=1)
     parser.add_argument('--q_query', type=int, default=15)
-    parser.add_argument('--episodes', type=int, default=100)
+    parser.add_argument('--episodes', type=int, default=2000)
     
     args = parser.parse_args()
     
@@ -112,6 +112,7 @@ def main():
     
     train_set, num_classes = get_dataset(args, 'train')
     val_set, _ = get_dataset(args, 'val')
+    test_set, _ = get_dataset(args, 'test')
     
     # Initialize Classifier for Pretrain
     classifier = None
@@ -186,6 +187,17 @@ def main():
     # Save Dense Model
     torch.save(model.state_dict(), os.path.join(save_path, 'w_final_dense.pth'))
     
+    # --- Final Test on Dense Model ---
+    print("Testing Best Dense Model on C_test...")
+    # Load best dense model
+    model.load_state_dict(torch.load(os.path.join(save_path, 'best_dense.pth')))
+    test_sampler = CategoriesSampler(test_set.labels, args.episodes, args.n_way, args.k_shot, args.q_query)
+    test_loader = DataLoader(test_set, batch_sampler=test_sampler, num_workers=4)
+    test_acc, test_ci = eval_protonet(model, test_loader, args.n_way, args.k_shot, args.q_query, device)
+    print(f"Best Dense Test Acc: {test_acc:.2f}% +/- {test_ci:.2f}%")
+    with open(os.path.join(save_path, 'test_results.txt'), 'a') as f:
+        f.write(f"Dense Test Acc: {test_acc:.2f}% +/- {test_ci:.2f}%\n")
+    
     # 3. Prune
     if args.prune_rate > 0:
         print(f"Pruning with rate {args.prune_rate}...")
@@ -236,6 +248,19 @@ def main():
                 torch.save(model.state_dict(), os.path.join(save_path, 'best_sparse.pth'))
                 
         torch.save(model.state_dict(), os.path.join(save_path, 'w_final_sparse.pth'))
+
+        # --- Final Test on Sparse Model ---
+        print("Testing Best Sparse Model on C_test...")
+        # Load best sparse model
+        model.load_state_dict(torch.load(os.path.join(save_path, 'best_sparse.pth')))
+        # Apply masks to ensure sparsity (loading state dict might overwrite if masks not saved in state dict, 
+        # but usually we just re-apply masks to be safe)
+        apply_masks(model, masks) 
+        
+        test_acc, test_ci = eval_protonet(model, test_loader, args.n_way, args.k_shot, args.q_query, device)
+        print(f"Best Sparse Test Acc: {test_acc:.2f}% +/- {test_ci:.2f}%")
+        with open(os.path.join(save_path, 'test_results.txt'), 'a') as f:
+            f.write(f"Sparse Test Acc (Prune {args.prune_rate}): {test_acc:.2f}% +/- {test_ci:.2f}%\n")
 
 if __name__ == '__main__':
     main()
