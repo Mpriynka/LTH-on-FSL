@@ -149,13 +149,13 @@ def main():
         
         for epoch in range(1, args.epochs + 1):
             train_loss, train_acc = train_protonet(model, train_loader, optimizer, epoch, args.n_way, args.k_shot, args.q_query, device)
-            val_acc = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
-            print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Train Acc {train_acc:.4f}, Val Acc {val_acc:.4f}")
+            val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
+            print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Train Acc {train_acc:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
             
             # Log to CSV
             with open(csv_file, 'a', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([epoch, 'dense', train_loss, train_acc, val_acc])
+                writer.writerow([epoch, 'dense', train_loss, train_acc, val_acc, val_ci])
             
             # Save Best
             if val_acc > best_dense_acc:
@@ -171,13 +171,13 @@ def main():
         for epoch in range(1, args.epochs + 1):
             train_loss = train_pretrain(model, classifier, train_loader, optimizer, epoch, device)
             # Use eval_protonet for validation!
-            val_acc = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
-            print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.4f}")
+            val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
+            print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
             
             # Log to CSV
             with open(csv_file, 'a', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([epoch, 'dense', train_loss, 0.0, val_acc]) 
+                writer.writerow([epoch, 'dense', train_loss, 0.0, val_acc, val_ci]) 
             
             # Save Best
             if val_acc > best_dense_acc:
@@ -223,24 +223,24 @@ def main():
             if args.method == 'protonet':
                 train_loss, train_acc = train_protonet(model, train_loader, optimizer, epoch, args.n_way, args.k_shot, args.q_query, device)
                 apply_masks(model, masks) # Enforce sparsity
-                val_acc = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
-                print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.4f}")
+                val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
+                print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
                 
                 # Log to CSV
                 with open(csv_file, 'a', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow([epoch, 'sparse', train_loss, train_acc, val_acc])
+                    writer.writerow([epoch, 'sparse', train_loss, train_acc, val_acc, val_ci])
 
             elif args.method == 'pretrain':
                 train_loss = train_pretrain(model, classifier, train_loader, optimizer, epoch, device)
                 apply_masks(model, masks)
-                val_acc = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
-                print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.4f}")
+                val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
+                print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
                 
                 # Log to CSV
                 with open(csv_file, 'a', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow([epoch, 'sparse', train_loss, 0.0, val_acc])
+                    writer.writerow([epoch, 'sparse', train_loss, 0.0, val_acc, val_ci])
             
             # Save Best Sparse
             if val_acc > best_sparse_acc:
