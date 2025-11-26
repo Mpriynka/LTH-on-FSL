@@ -67,7 +67,9 @@ def main():
     parser.add_argument('--method', type=str, default='protonet', choices=['pretrain', 'protonet'])
     parser.add_argument('--prune_rate', type=float, default=0.0, help='Sparsity level (e.g. 0.5 for 50%%)')
     parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--lr', type=float, default=0.001)
+    parser.add_argument('--weight_decay', type=float, default=5e-4)
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--save_dir', type=str, default='./experiments')
     
@@ -75,7 +77,9 @@ def main():
     parser.add_argument('--n_way', type=int, default=5)
     parser.add_argument('--k_shot', type=int, default=1)
     parser.add_argument('--q_query', type=int, default=15)
-    parser.add_argument('--episodes', type=int, default=2000)
+    parser.add_argument('--episodes', type=int, default=2000, help='Number of episodes for training (ProtoNet)')
+    parser.add_argument('--val_episodes', type=int, default=200, help='Number of episodes for validation')
+    parser.add_argument('--val_freq', type=int, default=5, help='Validate every N epochs')
     
     args = parser.parse_args()
     
@@ -135,54 +139,70 @@ def main():
              pass
         
         classifier = torch.nn.Linear(feat_dim, num_classes).to(device)
-        optimizer = optim.Adam(list(model.parameters()) + list(classifier.parameters()), lr=args.lr)
+        optimizer = optim.AdamW(list(model.parameters()) + list(classifier.parameters()), lr=args.lr, weight_decay=args.weight_decay)
     else:
-        optimizer = optim.Adam(model.parameters(), lr=args.lr)
+        optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     best_dense_acc = 0.0
     
     if args.method == 'protonet':
         train_sampler = CategoriesSampler(train_set.labels, args.episodes, args.n_way, args.k_shot + args.q_query)
         train_loader = DataLoader(train_set, batch_sampler=train_sampler, num_workers=4)
-        val_sampler = CategoriesSampler(val_set.labels, args.episodes, args.n_way, args.k_shot + args.q_query)
+        val_sampler = CategoriesSampler(val_set.labels, args.val_episodes, args.n_way, args.k_shot + args.q_query)
         val_loader = DataLoader(val_set, batch_sampler=val_sampler, num_workers=4)
         
         for epoch in range(1, args.epochs + 1):
             train_loss, train_acc = train_protonet(model, train_loader, optimizer, epoch, args.n_way, args.k_shot, args.q_query, device)
-            val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
-            print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Train Acc {train_acc:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
             
-            # Log to CSV
-            with open(csv_file, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([epoch, 'dense', train_loss, train_acc, val_acc, val_ci])
-            
-            # Save Best
-            if val_acc > best_dense_acc:
-                best_dense_acc = val_acc
-                torch.save(model.state_dict(), os.path.join(save_path, 'best_dense.pth'))
+            if epoch % args.val_freq == 0 or epoch == args.epochs:
+                val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
+                print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Train Acc {train_acc:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
+                
+                # Log to CSV
+                with open(csv_file, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([epoch, 'dense', train_loss, train_acc, val_acc, val_ci])
+                
+                # Save Best
+                if val_acc > best_dense_acc:
+                    best_dense_acc = val_acc
+                    torch.save(model.state_dict(), os.path.join(save_path, 'best_dense.pth'))
+            else:
+                print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Train Acc {train_acc:.4f}")
+                # Log to CSV (no val)
+                with open(csv_file, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([epoch, 'dense', train_loss, train_acc, '', ''])
             
     elif args.method == 'pretrain':
         train_loader = DataLoader(train_set, batch_size=64, shuffle=True, num_workers=4)
         # Validation for pretrain should ALSO be episodic (ProtoNet style) to match FSL setting
-        val_sampler = CategoriesSampler(val_set.labels, args.episodes, args.n_way, args.k_shot + args.q_query)
+        val_sampler = CategoriesSampler(val_set.labels, args.val_episodes, args.n_way, args.k_shot + args.q_query)
         val_loader = DataLoader(val_set, batch_sampler=val_sampler, num_workers=4)
         
         for epoch in range(1, args.epochs + 1):
             train_loss = train_pretrain(model, classifier, train_loader, optimizer, epoch, device)
-            # Use eval_protonet for validation!
-            val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
-            print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
             
-            # Log to CSV
-            with open(csv_file, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([epoch, 'dense', train_loss, 0.0, val_acc, val_ci]) 
-            
-            # Save Best
-            if val_acc > best_dense_acc:
-                best_dense_acc = val_acc
-                torch.save(model.state_dict(), os.path.join(save_path, 'best_dense.pth'))
+            if epoch % args.val_freq == 0 or epoch == args.epochs:
+                # Use eval_protonet for validation!
+                val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
+                print(f"Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
+                
+                # Log to CSV
+                with open(csv_file, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([epoch, 'dense', train_loss, 0.0, val_acc, val_ci]) 
+                
+                # Save Best
+                if val_acc > best_dense_acc:
+                    best_dense_acc = val_acc
+                    torch.save(model.state_dict(), os.path.join(save_path, 'best_dense.pth'))
+            else:
+                print(f"Epoch {epoch}: Train Loss {train_loss:.4f}")
+                # Log to CSV
+                with open(csv_file, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([epoch, 'dense', train_loss, 0.0, '', ''])
 
     # Save Dense Model
     torch.save(model.state_dict(), os.path.join(save_path, 'w_final_dense.pth'))
@@ -191,6 +211,7 @@ def main():
     print("Testing Best Dense Model on C_test...")
     # Load best dense model
     model.load_state_dict(torch.load(os.path.join(save_path, 'best_dense.pth')))
+    # Use args.episodes (default 2000) for final test, not val_episodes
     test_sampler = CategoriesSampler(test_set.labels, args.episodes, args.n_way, args.k_shot, args.q_query)
     test_loader = DataLoader(test_set, batch_sampler=test_sampler, num_workers=4)
     test_acc, test_ci = eval_protonet(model, test_loader, args.n_way, args.k_shot, args.q_query, device)
@@ -213,9 +234,9 @@ def main():
         print("Retraining Sparse Model...")
         if args.method == 'pretrain':
              # Re-init optimizer with classifier
-             optimizer = optim.Adam(list(model.parameters()) + list(classifier.parameters()), lr=args.lr)
+             optimizer = optim.AdamW(list(model.parameters()) + list(classifier.parameters()), lr=args.lr, weight_decay=args.weight_decay)
         else:
-             optimizer = optim.Adam(model.parameters(), lr=args.lr) # Reset optimizer
+             optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay) # Reset optimizer
         best_sparse_acc = 0.0
         
         for epoch in range(1, args.epochs + 1):
@@ -223,29 +244,53 @@ def main():
             if args.method == 'protonet':
                 train_loss, train_acc = train_protonet(model, train_loader, optimizer, epoch, args.n_way, args.k_shot, args.q_query, device)
                 apply_masks(model, masks) # Enforce sparsity
-                val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
-                print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
                 
-                # Log to CSV
-                with open(csv_file, 'a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow([epoch, 'sparse', train_loss, train_acc, val_acc, val_ci])
+                if epoch % args.val_freq == 0 or epoch == args.epochs:
+                    val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
+                    print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
+                    
+                    # Log to CSV
+                    with open(csv_file, 'a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([epoch, 'sparse', train_loss, train_acc, val_acc, val_ci])
+                    
+                    # Save Best Sparse
+                    if val_acc > best_sparse_acc:
+                        best_sparse_acc = val_acc
+                        torch.save(model.state_dict(), os.path.join(save_path, 'best_sparse.pth'))
+                else:
+                    print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}")
+                    with open(csv_file, 'a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([epoch, 'sparse', train_loss, train_acc, '', ''])
 
             elif args.method == 'pretrain':
                 train_loss = train_pretrain(model, classifier, train_loader, optimizer, epoch, device)
                 apply_masks(model, masks)
-                val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
-                print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
                 
-                # Log to CSV
-                with open(csv_file, 'a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow([epoch, 'sparse', train_loss, 0.0, val_acc, val_ci])
+                if epoch % args.val_freq == 0 or epoch == args.epochs:
+                    val_acc, val_ci = eval_protonet(model, val_loader, args.n_way, args.k_shot, args.q_query, device)
+                    print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}, Val Acc {val_acc:.2f}% +/- {val_ci:.2f}%")
+                    
+                    # Log to CSV
+                    with open(csv_file, 'a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([epoch, 'sparse', train_loss, 0.0, val_acc, val_ci])
+                    
+                    # Save Best Sparse
+                    if val_acc > best_sparse_acc:
+                        best_sparse_acc = val_acc
+                        torch.save(model.state_dict(), os.path.join(save_path, 'best_sparse.pth'))
+                else:
+                    print(f"Sparse Epoch {epoch}: Train Loss {train_loss:.4f}")
+                    with open(csv_file, 'a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([epoch, 'sparse', train_loss, 0.0, '', ''])
             
-            # Save Best Sparse
-            if val_acc > best_sparse_acc:
-                best_sparse_acc = val_acc
-                torch.save(model.state_dict(), os.path.join(save_path, 'best_sparse.pth'))
+            # Save Best Sparse (Moved inside loop condition above)
+            # if val_acc > best_sparse_acc:
+            #     best_sparse_acc = val_acc
+            #     torch.save(model.state_dict(), os.path.join(save_path, 'best_sparse.pth'))
                 
         torch.save(model.state_dict(), os.path.join(save_path, 'w_final_sparse.pth'))
 
