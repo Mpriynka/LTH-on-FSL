@@ -42,19 +42,39 @@ def get_backbone(args):
 def get_dataset(args, mode='train'):
     if args.dataset == 'cifar-fs':
         # CIFAR-FS is 32x32
-        transform = transforms.Compose([
-            transforms.Resize((32, 32)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-        ])
+        if mode == 'train':
+            transform = transforms.Compose([
+                transforms.Resize((32, 32)),
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.Resize((32, 32)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+            ])
         return CIFARFS(os.path.join(args.data_root, 'cifar-fs'), mode=mode, transform=transform), 64
     elif args.dataset == 'mini-imagenet':
         # MiniImageNet is usually resized to 84x84
-        transform = transforms.Compose([
-            transforms.Resize((84, 84)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-        ])
+        if mode == 'train':
+            transform = transforms.Compose([
+                transforms.Resize((84, 84)),
+                transforms.RandomCrop(84, padding=8),
+                transforms.RandomHorizontalFlip(),
+                transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
+                transforms.ToTensor(),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.Resize((84, 84)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+            ])
         return MiniImageNet(os.path.join(args.data_root, 'mini-imagenet'), mode=mode, transform=transform), 64
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
@@ -69,6 +89,8 @@ def main():
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--weight_decay', type=float, default=5e-4)
+    parser.add_argument('--gamma', type=float, default=0.1, help='LR decay factor')
+    parser.add_argument('--milestones', type=int, nargs='+', default=[50, 80], help='Epochs to decay LR')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--save_dir', type=str, default='./experiments')
     
@@ -142,13 +164,15 @@ def main():
     else:
         optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.milestones, gamma=args.gamma)
+
     best_dense_acc = 0.0
     
     if args.method == 'protonet':
         train_sampler = CategoriesSampler(train_set.labels, args.episodes, args.n_way, args.k_shot + args.q_query)
-        train_loader = DataLoader(train_set, batch_sampler=train_sampler, num_workers=4)
+        train_loader = DataLoader(train_set, batch_sampler=train_sampler, num_workers=2)
         val_sampler = CategoriesSampler(val_set.labels, args.val_episodes, args.n_way, args.k_shot + args.q_query)
-        val_loader = DataLoader(val_set, batch_sampler=val_sampler, num_workers=4)
+        val_loader = DataLoader(val_set, batch_sampler=val_sampler, num_workers=2)
         
         for epoch in range(1, args.epochs + 1):
             train_loss, train_acc = train_protonet(model, train_loader, optimizer, epoch, args.n_way, args.k_shot, args.q_query, device)
@@ -174,10 +198,10 @@ def main():
                     writer.writerow([epoch, 'dense', train_loss, train_acc, '', ''])
             
     elif args.method == 'pretrain':
-        train_loader = DataLoader(train_set, batch_size=64, shuffle=True, num_workers=4)
+        train_loader = DataLoader(train_set, batch_size=64, shuffle=True, num_workers=2)
         # Validation for pretrain should ALSO be episodic (ProtoNet style) to match FSL setting
         val_sampler = CategoriesSampler(val_set.labels, args.val_episodes, args.n_way, args.k_shot + args.q_query)
-        val_loader = DataLoader(val_set, batch_sampler=val_sampler, num_workers=4)
+        val_loader = DataLoader(val_set, batch_sampler=val_sampler, num_workers=2)
         
         for epoch in range(1, args.epochs + 1):
             train_loss = train_pretrain(model, classifier, train_loader, optimizer, epoch, device)
@@ -202,6 +226,8 @@ def main():
                 with open(csv_file, 'a', newline='') as f:
                     writer = csv.writer(f)
                     writer.writerow([epoch, 'dense', train_loss, 0.0, '', ''])
+            
+            scheduler.step()
 
     # Save Dense Model
     torch.save(model.state_dict(), os.path.join(save_path, 'w_final_dense.pth'))
@@ -212,7 +238,7 @@ def main():
     model.load_state_dict(torch.load(os.path.join(save_path, 'best_dense.pth')))
     # Use args.episodes (default 2000) for final test, not val_episodes
     test_sampler = CategoriesSampler(test_set.labels, args.episodes, args.n_way, args.k_shot, args.q_query)
-    test_loader = DataLoader(test_set, batch_sampler=test_sampler, num_workers=4)
+    test_loader = DataLoader(test_set, batch_sampler=test_sampler, num_workers=2)
     test_acc, test_ci = eval_protonet(model, test_loader, args.n_way, args.k_shot, args.q_query, device)
     print(f"Best Dense Test Acc: {test_acc:.2f}% +/- {test_ci:.2f}%")
     with open(os.path.join(save_path, 'test_results.txt'), 'a') as f:
@@ -236,6 +262,8 @@ def main():
              optimizer = optim.AdamW(list(model.parameters()) + list(classifier.parameters()), lr=args.lr, weight_decay=args.weight_decay)
         else:
              optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay) # Reset optimizer
+        
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.milestones, gamma=args.gamma)
         best_sparse_acc = 0.0
         
         for epoch in range(1, args.epochs + 1):
@@ -290,6 +318,8 @@ def main():
             # if val_acc > best_sparse_acc:
             #     best_sparse_acc = val_acc
             #     torch.save(model.state_dict(), os.path.join(save_path, 'best_sparse.pth'))
+            
+            scheduler.step()
                 
         torch.save(model.state_dict(), os.path.join(save_path, 'w_final_sparse.pth'))
 
