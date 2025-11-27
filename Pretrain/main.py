@@ -27,7 +27,7 @@ def get_args():
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
     parser.add_argument('--seed', type=int, default=42, help='random seed')
     parser.add_argument('--gpu', type=str, default='0', help='gpu device id')
-    parser.add_argument('--print_freq', type=int, default=300, help='print frequency')
+    parser.add_argument('--print_freq', type=int, default=500, help='print frequency')
     
     parser.add_argument('--n_way', type=int, default=5)
     parser.add_argument('--n_shot', type=int, default=1)
