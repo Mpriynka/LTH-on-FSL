@@ -23,8 +23,8 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    parser.add_argument('--output-dir', type=str, default='results', help='Output directory')
-    parser.add_argument('--print-freq', type=int, default=50, help='Print frequency')
+    parser.add_argument('--output-dir', type=str, default='./checkpoints', help='Output directory')
+    parser.add_argument('--print-freq', type=int, default=500, help='Print frequency')
     return parser.parse_args()
 
 def train_epoch(model, loader, optimizer, epoch, args, logger, masks=None):
@@ -75,6 +75,7 @@ def evaluate(model, loader, args):
 def main():
     args = parse_args()
     set_seed(args.seed)
+    args.output_dir = os.path.join(args.output_dir, args.backbone)
     os.makedirs(args.output_dir, exist_ok=True)
     logger = get_logger(os.path.join(args.output_dir, 'train.log'))
     logger.info(args)
@@ -103,7 +104,7 @@ def main():
         model = model.cuda()
         
     # Save initialization
-    torch.save(model.state_dict(), os.path.join(args.output_dir, 'init_weights.pth'))
+    torch.save(model.state_dict(), os.path.join(args.output_dir, 'W_init.pth'))
     
     # Optimizer
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=5e-4)
@@ -128,10 +129,10 @@ def main():
             'state_dict': model.state_dict(),
             'best_acc': best_acc,
             'optimizer': optimizer.state_dict(),
-        }, is_best, folder=args.output_dir)
+        }, is_best, filename='checkpoint_dense.pth', best_filename='model_dense_best.pth', folder=args.output_dir)
         
     # Load best dense model
-    checkpoint = torch.load(os.path.join(args.output_dir, 'model_best.pth.tar'), weights_only=False)
+    checkpoint = torch.load(os.path.join(args.output_dir, 'model_dense_best.pth'), weights_only=False)
     model.load_state_dict(checkpoint['state_dict'])
     test_acc, test_h = evaluate(model, test_loader, args)
     logger.info(f'Dense Model Test Acc: {test_acc:.2f} +/- {test_h:.2f}')
@@ -148,7 +149,7 @@ def main():
         masks = get_masks(model.backbone, ratio)
         
         # Reset to initialization
-        model.load_state_dict(torch.load(os.path.join(args.output_dir, 'init_weights.pth'), weights_only=False))
+        model.load_state_dict(torch.load(os.path.join(args.output_dir, 'W_init.pth'), weights_only=False))
         
         # Apply masks (to zero out weights initially)
         apply_masks(model.backbone, masks)
@@ -171,10 +172,10 @@ def main():
             
             if val_acc > best_acc_pruned:
                 best_acc_pruned = val_acc
-                torch.save(model.state_dict(), os.path.join(args.output_dir, f'{name}_best.pth'))
+                torch.save(model.state_dict(), os.path.join(args.output_dir, f'model_subnet_{ratio}.pth'))
                 
         # Test Pruned Model
-        model.load_state_dict(torch.load(os.path.join(args.output_dir, f'{name}_best.pth'), weights_only=False))
+        model.load_state_dict(torch.load(os.path.join(args.output_dir, f'model_subnet_{ratio}.pth'), weights_only=False))
         test_acc, test_h = evaluate(model, test_loader, args)
         logger.info(f'{name} Model Test Acc: {test_acc:.2f} +/- {test_h:.2f}')
 

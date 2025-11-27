@@ -7,8 +7,8 @@ from torch.utils.data import DataLoader
 import copy
 
 from mini_imagenet import MiniImageNet, get_transforms
-from models.resnet12 import resnet12
-from models.conv4 import conv4
+from backbone.resnet12 import resnet12
+from backbone.conv4 import conv4
 
 from utils import set_seed, get_logger, save_checkpoint
 from pruning import prune_model, apply_mask, current_sparsity
@@ -109,10 +109,7 @@ def main():
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
                 'best_acc': best_acc,
-            }, is_best, filename='checkpoint_dense.pth', folder=args.save_dir)
-            
-            if is_best:
-                torch.save({'state_dict': model.state_dict()}, dense_path)
+            }, is_best, filename='checkpoint_dense.pth', best_filename='model_dense_best.pth', folder=args.save_dir)
                 
     # Evaluate Dense
     logger.info("Evaluating Dense Model...")

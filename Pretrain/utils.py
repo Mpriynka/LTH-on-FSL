@@ -47,10 +47,10 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar', folder='.'):
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar', best_filename='model_best.pth.tar', folder='.'):
     torch.save(state, os.path.join(folder, filename))
     if is_best:
-        shutil.copyfile(os.path.join(folder, filename), os.path.join(folder, 'model_best.pth.tar'))
+        shutil.copyfile(os.path.join(folder, filename), os.path.join(folder, best_filename))
 
 def get_logger(filename):
     logger = logging.getLogger('train_logger')
