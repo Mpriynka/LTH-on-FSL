@@ -133,6 +133,7 @@ def main():
         
         # 2. Generate Mask
         masks = prune_model(model, ratio)
+        apply_mask(model, masks)
         logger.info(f"Sparsity: {current_sparsity(model):.2f}%")
         
         # 3. Reset to W_init
