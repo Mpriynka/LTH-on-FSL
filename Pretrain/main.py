@@ -17,10 +17,10 @@ from evaluate import meta_test
 
 def get_args():
     parser = argparse.ArgumentParser(description='LTH for FSL (Pretrain)')
-    parser.add_argument('--data_root', type=str, default='../Datasets/Mini-Imagenet', help='path to dataset')
+    parser.add_argument('--data_root', type=str, default='Datasets/Mini-Imagenet', help='path to dataset')
     parser.add_argument('--backbone', type=str, default='resnet12', choices=['resnet12', 'conv4'], help='backbone architecture')
 
-    parser.add_argument('--save_dir', type=str, default='./checkpoints', help='path to save checkpoints')
+    parser.add_argument('--save_dir', type=str, default='./checkpoints/Pretrain', help='path to save checkpoints')
     parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
@@ -30,8 +30,8 @@ def get_args():
     parser.add_argument('--print_freq', type=int, default=500, help='print frequency')
     
     parser.add_argument('--n_way', type=int, default=5)
-    parser.add_argument('--n_shot', type=int, default=1)
-    parser.add_argument('--n_query', type=int, default=15)
+    parser.add_argument('--k_shot', type=int, default=1)
+    parser.add_argument('--k_query', type=int, default=15)
     parser.add_argument('--test_episodes', type=int, default=2000)
     
     parser.add_argument('--prune_ratios', type=float, nargs='+', default=[10, 50, 90], help='Pruning ratios (LS, MS, HS)')

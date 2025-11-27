@@ -14,7 +14,7 @@ from pruning import get_masks, apply_masks, apply_mask_grads, current_sparsity
 
 def parse_args():
     parser = argparse.ArgumentParser(description='LTH for FSL (ProtoNet)')
-    parser.add_argument('--data-root', type=str, default='../Datasets/Mini-Imagenet', help='Path to dataset')
+    parser.add_argument('--data-root', type=str, default='Datasets/Mini-Imagenet', help='Path to dataset')
     parser.add_argument('--backbone', type=str, default='conv4', choices=['conv4', 'resnet12'], help='Backbone model')
     parser.add_argument('--n_way', type=int, default=5, help='Number of classes per episode')
     parser.add_argument('--k_shot', type=int, default=1, help='Number of support samples per class')
@@ -23,7 +23,7 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    parser.add_argument('--output-dir', type=str, default='./checkpoints', help='Output directory')
+    parser.add_argument('--output-dir', type=str, default='./checkpoints/Protonet', help='Output directory')
     parser.add_argument('--print-freq', type=int, default=500, help='Print frequency')
     return parser.parse_args()
 
