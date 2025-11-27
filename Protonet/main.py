@@ -5,21 +5,22 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from dataset import MiniImageNet, CategoriesSampler, get_transforms
-from backbone import conv4, resnet12
+from mini_imagenet import MiniImageNet, CategoriesSampler, get_transforms
+from backbone.conv4 import conv4
+from backbone.resnet12 import resnet12
 from protonet import ProtoNet
 from utils import set_seed, AverageMeter, save_checkpoint, get_logger, mean_confidence_interval
 from pruning import get_masks, apply_masks, apply_mask_grads, current_sparsity
 
 def parse_args():
     parser = argparse.ArgumentParser(description='LTH for FSL (ProtoNet)')
-    parser.add_argument('--data-root', type=str, default='/home/priyanka/work/projects/LTH-on-FSL/Pretrain_code/data/miniImagenet', help='Path to dataset')
-    parser.add_argument('--model', type=str, default='conv4', choices=['conv4', 'resnet12'], help='Backbone model')
+    parser.add_argument('--data-root', type=str, default='../Datasets/Mini-Imagenet', help='Path to dataset')
+    parser.add_argument('--backbone', type=str, default='conv4', choices=['conv4', 'resnet12'], help='Backbone model')
     parser.add_argument('--n-way', type=int, default=5, help='Number of classes per episode')
     parser.add_argument('--k-shot', type=int, default=1, help='Number of support samples per class')
     parser.add_argument('--k-query', type=int, default=15, help='Number of query samples per class')
-    parser.add_argument('--episodes', type=int, default=100, help='Number of episodes per epoch') # Reduced for testing, increase for real run
-    parser.add_argument('--epochs', type=int, default=20, help='Number of epochs') # Reduced for testing
+    parser.add_argument('--episodes', type=int, default=2000, help='Number of episodes per epoch') 
+    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--output-dir', type=str, default='results', help='Output directory')
@@ -92,7 +93,7 @@ def main():
     test_loader = DataLoader(test_set, batch_sampler=test_sampler, num_workers=4, pin_memory=True)
     
     # Model
-    if args.model == 'conv4':
+    if args.backbone == 'conv4':
         backbone = conv4()
     else:
         backbone = resnet12()
@@ -105,8 +106,8 @@ def main():
     torch.save(model.state_dict(), os.path.join(args.output_dir, 'init_weights.pth'))
     
     # Optimizer
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=5e-4)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=45, gamma=0.1)
     
     # --------------------------------------------------------------------------
     # 1. Dense Training
@@ -157,8 +158,8 @@ def main():
         logger.info(f"Sparsity after reset: {sparsity:.2f}%")
         
         # Retrain
-        optimizer = optim.Adam(model.parameters(), lr=args.lr)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+        optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=5e-4)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=45, gamma=0.1)
         
         best_acc_pruned = 0
         for epoch in range(args.epochs):

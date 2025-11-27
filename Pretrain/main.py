@@ -6,18 +6,18 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import copy
 
-from data.mini_imagenet import MiniImageNet, get_transforms
+from mini_imagenet import MiniImageNet, get_transforms
 from models.resnet12 import resnet12
 from models.conv4 import conv4
 
-from utils.utils import set_seed, get_logger, save_checkpoint
-from utils.pruning import prune_model, apply_mask, current_sparsity
+from utils import set_seed, get_logger, save_checkpoint
+from pruning import prune_model, apply_mask, current_sparsity
 from train import train_epoch
 from evaluate import meta_test
 
 def get_args():
     parser = argparse.ArgumentParser(description='LTH for FSL (Pretrain)')
-    parser.add_argument('--data_root', type=str, default='./data/miniImagenet', help='path to dataset')
+    parser.add_argument('--data_root', type=str, default='../Datasets/Mini-Imagenet', help='path to dataset')
     parser.add_argument('--backbone', type=str, default='resnet12', choices=['resnet12', 'conv4'], help='backbone architecture')
 
     parser.add_argument('--save_dir', type=str, default='./checkpoints', help='path to save checkpoints')

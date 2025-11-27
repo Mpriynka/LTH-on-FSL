@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import scipy.stats
-from data.mini_imagenet import MiniImageNet, get_transforms
+from mini_imagenet import MiniImageNet, get_transforms
 import torch.nn.functional as F
 
 def mean_confidence_interval(data, confidence=0.95):

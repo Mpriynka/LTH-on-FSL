@@ -16,6 +16,7 @@ class ProtoNet(nn.Module):
         """
         # Extract features
         z = self.backbone(x, is_feat=True) # (batch_size, feat_dim)
+        z = F.normalize(z, p=2, dim=1)
         
         # Reshape to (n_way, k_shot + k_query, feat_dim)
         z = z.view(n_way, k_shot + k_query, -1)

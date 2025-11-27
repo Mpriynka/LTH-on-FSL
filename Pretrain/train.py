@@ -1,7 +1,7 @@
 import torch
 import time
-from utils.utils import AverageMeter, accuracy
-from utils.pruning import apply_mask_grads
+from utils import AverageMeter, accuracy
+from pruning import apply_mask_grads
 
 def train_epoch(train_loader, model, criterion, optimizer, epoch, args, logger, masks=None):
     batch_time = AverageMeter()
