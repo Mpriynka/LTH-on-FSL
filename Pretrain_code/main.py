@@ -8,6 +8,8 @@ import copy
 
 from data.mini_imagenet import MiniImageNet, get_transforms
 from models.resnet12 import resnet12
+from models.conv4 import conv4
+
 from utils.utils import set_seed, get_logger, save_checkpoint
 from utils.pruning import prune_model, apply_mask, current_sparsity
 from train import train_epoch
@@ -16,6 +18,8 @@ from evaluate import meta_test
 def get_args():
     parser = argparse.ArgumentParser(description='LTH for FSL (Pretrain)')
     parser.add_argument('--data_root', type=str, default='./data/miniImagenet', help='path to dataset')
+    parser.add_argument('--backbone', type=str, default='resnet12', choices=['resnet12', 'conv4'], help='backbone architecture')
+
     parser.add_argument('--save_dir', type=str, default='./checkpoints', help='path to save checkpoints')
     parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
@@ -36,6 +40,7 @@ def get_args():
 
 def main():
     args = get_args()
+    args.save_dir = os.path.join(args.save_dir, args.backbone)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     
     if not os.path.exists(args.save_dir):
@@ -56,7 +61,13 @@ def main():
 
     
     # Model
-    model = resnet12(num_classes=64) 
+    if args.backbone == 'resnet12':
+        model = resnet12(num_classes=64)
+    elif args.backbone == 'conv4':
+        model = conv4(num_classes=64)
+    else:
+        raise ValueError(f"Unknown backbone: {args.backbone}")
+ 
     if torch.cuda.is_available():
         model = model.cuda()
         
