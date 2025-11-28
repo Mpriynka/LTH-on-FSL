@@ -45,13 +45,13 @@ def meta_test(model, args, logger, mode='test'):
                 # Sample 1 support + 15 query
                 indices = class_to_indices[cls]
                 # Ensure we have enough images
-                if len(indices) < args.n_shot + args.n_query:
+                if len(indices) < args.k_shot + args.k_query:
                      # Fallback or skip if not enough images (should not happen in standard miniImageNet)
                      continue
                      
-                selected = np.random.choice(indices, args.n_shot + args.n_query, replace=False)
-                support_indices.extend(selected[:args.n_shot])
-                query_indices.extend(selected[args.n_shot:])
+                selected = np.random.choice(indices, args.k_shot + args.k_query, replace=False)
+                support_indices.extend(selected[:args.k_shot])
+                query_indices.extend(selected[args.k_shot:])
                 
             # Load images
             support_imgs = []
@@ -65,7 +65,7 @@ def meta_test(model, args, logger, mode='test'):
             for i, idx in enumerate(query_indices):
                 img, _ = dataset[idx]
                 query_imgs.append(img)
-                query_labels.append(i // args.n_query) # 0,0,..,1,1,..
+                query_labels.append(i // args.k_query) # 0,0,..,1,1,..
             query_imgs = torch.stack(query_imgs)
             query_labels = torch.tensor(query_labels)
             
@@ -83,11 +83,11 @@ def meta_test(model, args, logger, mode='test'):
             query_feats = F.normalize(query_feats, dim=1)
             
             # Prototypes (Mean of support)
-            support_feats = support_feats.view(args.n_way, args.n_shot, -1)
+            support_feats = support_feats.view(args.n_way, args.k_shot, -1)
             prototypes = support_feats.mean(dim=1)
             
             # Nearest Neighbor
-            dists = torch.cdist(query_feats, prototypes) # (n_query_total, n_way)
+            dists = torch.cdist(query_feats, prototypes) # (k_query_total, n_way)
             
             pred = dists.argmin(dim=1)
             acc = (pred == query_labels).float().mean().item() * 100

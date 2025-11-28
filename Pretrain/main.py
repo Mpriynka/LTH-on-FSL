@@ -27,7 +27,7 @@ def get_args():
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
     parser.add_argument('--seed', type=int, default=42, help='random seed')
     parser.add_argument('--gpu', type=str, default='0', help='gpu device id')
-    parser.add_argument('--print_freq', type=int, default=500, help='print frequency')
+    parser.add_argument('--print_freq', type=int, default=600, help='print frequency')
     
     parser.add_argument('--n_way', type=int, default=5)
     parser.add_argument('--k_shot', type=int, default=1)
@@ -40,7 +40,7 @@ def get_args():
 
 def main():
     args = get_args()
-    args.save_dir = os.path.join(args.save_dir, args.backbone)
+    args.save_dir = os.path.join(args.save_dir, args.backbone, f"{args.n_way}way_{args.k_shot}shot")
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     
     if not os.path.exists(args.save_dir):
@@ -87,7 +87,7 @@ def main():
     # Check if already trained
     if os.path.exists(dense_path):
         logger.info(f"Loading existing dense model from {dense_path}")
-        checkpoint = torch.load(dense_path)
+        checkpoint = torch.load(dense_path, weights_only=False)
         model.load_state_dict(checkpoint['state_dict'])
     else:
         for epoch in range(args.epochs):
@@ -114,7 +114,7 @@ def main():
     # Evaluate Dense
     logger.info("Evaluating Dense Model...")
     # Load best dense
-    checkpoint = torch.load(dense_path)
+    checkpoint = torch.load(dense_path, weights_only=False)
     model.load_state_dict(checkpoint['state_dict'])
     dense_acc, dense_ci = meta_test(model, args, logger)
     logger.info(f"Dense Result: {dense_acc:.2f} +/- {dense_ci:.2f}")
@@ -171,7 +171,7 @@ def main():
                 
         # Evaluate Subnet
         logger.info(f"Evaluating Subnet {ratio}%...")
-        checkpoint = torch.load(subnet_path)
+        checkpoint = torch.load(subnet_path, weights_only=False)
         model.load_state_dict(checkpoint['state_dict'])
         apply_mask(model, masks) # Ensure masked
         

@@ -24,7 +24,7 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--output-dir', type=str, default='./checkpoints/Protonet', help='Output directory')
-    parser.add_argument('--print-freq', type=int, default=500, help='Print frequency')
+    parser.add_argument('--print-freq', type=int, default=600, help='Print frequency')
     return parser.parse_args()
 
 def train_epoch(model, loader, optimizer, epoch, args, logger, masks=None):
@@ -75,7 +75,7 @@ def evaluate(model, loader, args):
 def main():
     args = parse_args()
     set_seed(args.seed)
-    args.output_dir = os.path.join(args.output_dir, args.backbone)
+    args.output_dir = os.path.join(args.output_dir, args.backbone, f"{args.n_way}way_{args.k_shot}shot")
     os.makedirs(args.output_dir, exist_ok=True)
     logger = get_logger(os.path.join(args.output_dir, 'train.log'))
     logger.info(args)
