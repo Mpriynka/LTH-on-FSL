@@ -10,7 +10,7 @@ class CosineLinear(nn.Module):
         self.out_features = out_features
         self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
         if sigma:
-            self.sigma = nn.Parameter(torch.Tensor(30))
+            self.sigma = nn.Parameter(torch.tensor(30.0))
         else:
             self.register_parameter('sigma', None)
         self.reset_parameters()
@@ -18,7 +18,7 @@ class CosineLinear(nn.Module):
     def reset_parameters(self):
         nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         if self.sigma is not None:
-            self.sigma.data.fill_(30) # Initial scale factor
+            self.sigma.data.fill_(30.0) # Initial scale factor
 
     def forward(self, input):
         out = F.linear(F.normalize(input, p=2, dim=1), F.normalize(self.weight, p=2, dim=1))
