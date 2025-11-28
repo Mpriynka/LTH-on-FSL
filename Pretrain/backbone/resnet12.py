@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from backbone.cosine_linear import CosineLinear
 
 class DropBlock(nn.Module):
     def __init__(self, block_size=5, keep_prob=0.9):
@@ -85,14 +86,14 @@ class ResNet12(nn.Module):
         super(ResNet12, self).__init__()
         self.inplanes = 3
         self.layer1 = self._make_layer(BasicBlock, 64, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
-        self.layer2 = self._make_layer(BasicBlock, 128, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
-        self.layer3 = self._make_layer(BasicBlock, 256, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
-        self.layer4 = self._make_layer(BasicBlock, 512, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
+        self.layer2 = self._make_layer(BasicBlock, 160, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
+        self.layer3 = self._make_layer(BasicBlock, 320, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
+        self.layer4 = self._make_layer(BasicBlock, 640, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
         self.avg_pool = avg_pool
         self.keep_avg_pool = avg_pool
         
         # Classifier
-        self.fc = nn.Linear(512, num_classes)
+        self.fc = CosineLinear(640, num_classes)
         
         for m in self.modules():
             if isinstance(m, nn.Conv2d):

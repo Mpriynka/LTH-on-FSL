@@ -81,19 +81,19 @@ class BasicBlock(nn.Module):
         return out
 
 class ResNet12(nn.Module):
-    def __init__(self, avg_pool=True, drop_rate=0.1, drop_block=True, num_classes=64):
+    def __init__(self, avg_pool=True, drop_rate=0.1, drop_block=False, num_classes=64):
         super(ResNet12, self).__init__()
         self.inplanes = 3
         self.layer1 = self._make_layer(BasicBlock, 64, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
-        self.layer2 = self._make_layer(BasicBlock, 128, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
-        self.layer3 = self._make_layer(BasicBlock, 256, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
-        self.layer4 = self._make_layer(BasicBlock, 512, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
+        self.layer2 = self._make_layer(BasicBlock, 160, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
+        self.layer3 = self._make_layer(BasicBlock, 320, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
+        self.layer4 = self._make_layer(BasicBlock, 640, stride=2, drop_rate=drop_rate, drop_block=drop_block, block_size=5)
         self.avg_pool = avg_pool
         self.keep_avg_pool = avg_pool
-        self.feat_dim = 512
+        self.feat_dim = 640
         
         # Classifier
-        self.fc = nn.Linear(512, num_classes)
+        self.fc = nn.Linear(640, num_classes)
         
         for m in self.modules():
             if isinstance(m, nn.Conv2d):

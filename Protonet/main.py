@@ -25,12 +25,15 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--output-dir', type=str, default='./checkpoints/Protonet', help='Output directory')
     parser.add_argument('--print-freq', type=int, default=600, help='Print frequency')
+    parser.add_argument('--meta-batch-size', type=int, default=1, help='Meta-batch size (number of episodes to average over)')
     return parser.parse_args()
 
 def train_epoch(model, loader, optimizer, epoch, args, logger, masks=None):
     model.train()
     losses = AverageMeter()
     accs = AverageMeter()
+    
+    optimizer.zero_grad()
     
     for i, (data, _) in enumerate(loader):
         if torch.cuda.is_available():
@@ -40,16 +43,21 @@ def train_epoch(model, loader, optimizer, epoch, args, logger, masks=None):
         # The sampler yields a batch of indices which the dataset converts to images.
         # The batch size is n_way * (k_shot + k_query).
         
-        optimizer.zero_grad()
         loss, acc = model.proto_loss(data, args.n_way, args.k_shot, args.k_query)
+        
+        # Normalize loss by meta_batch_size
+        loss = loss / args.meta_batch_size
         loss.backward()
         
-        if masks is not None:
-            apply_mask_grads(model.backbone, masks)
-            
-        optimizer.step()
+        if (i + 1) % args.meta_batch_size == 0 or (i + 1) == len(loader):
+            if masks is not None:
+                apply_mask_grads(model.backbone, masks)
+                
+            optimizer.step()
+            optimizer.zero_grad()
         
-        losses.update(loss.item(), 1)
+        # Multiply loss back for logging
+        losses.update(loss.item() * args.meta_batch_size, 1)
         accs.update(acc.item(), 1)
         
         if (i + 1) % args.print_freq == 0:

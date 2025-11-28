@@ -51,7 +51,7 @@ def get_transforms(mode='train'):
         return transforms.Compose([
             transforms.Resize(84),
             transforms.CenterCrop(84), 
-            # transforms.RandomResizedCrop(84), # Optional: might be too aggressive for FSL
+            transforms.RandomResizedCrop(84),
             transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
@@ -59,8 +59,7 @@ def get_transforms(mode='train'):
         ])
     else:
         return transforms.Compose([
-            transforms.Resize(84), # Resize to 84 directly for consistency
-            transforms.CenterCrop(84),
+            transforms.Resize((84, 84)), # Resize to 84x84 directly
             transforms.ToTensor(),
             transforms.Normalize(mean, std)
         ])
