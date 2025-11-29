@@ -40,7 +40,7 @@ class CategoriesSampler(Sampler):
                 indices = self.label_to_indices[l]
                 pos = torch.randperm(len(indices))[:self.n_per]
                 batch.append(torch.tensor(indices)[pos])
-            batch = torch.stack(batch).t().reshape(-1)
+            batch = torch.stack(batch).reshape(-1)
             yield batch
 
 def get_transforms(mode='train'):
@@ -49,10 +49,7 @@ def get_transforms(mode='train'):
     
     if mode == 'train':
         return transforms.Compose([
-            transforms.Resize(84),
-            transforms.CenterCrop(84), 
-            transforms.RandomResizedCrop(84),
-            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
+            transforms.Resize((84, 84)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean, std)
