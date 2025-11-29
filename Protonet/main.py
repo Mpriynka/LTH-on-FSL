@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 import copy
 import torch
 import torch.optim as optim
@@ -25,14 +26,25 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--output-dir', type=str, default='./checkpoints/Protonet', help='Output directory')
     parser.add_argument('--print-freq', type=int, default=600, help='Print frequency')
+    parser.add_argument('--meta-batch-size', type=int, default=1, help='Meta-batch size (number of episodes to average over)')
+    parser.add_argument('--num-workers', type=int, default=8, help='Number of data loading workers')
+    parser.add_argument('--test-episodes', type=int, default=2000, help='Number of episodes for testing')
     return parser.parse_args()
 
 def train_epoch(model, loader, optimizer, epoch, args, logger, masks=None):
     model.train()
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
     losses = AverageMeter()
     accs = AverageMeter()
     
+    end = time.time()
+    
+    optimizer.zero_grad()
+    
     for i, (data, _) in enumerate(loader):
+        data_time.update(time.time() - end)
+        
         if torch.cuda.is_available():
             data = data.cuda()
             
@@ -40,20 +52,33 @@ def train_epoch(model, loader, optimizer, epoch, args, logger, masks=None):
         # The sampler yields a batch of indices which the dataset converts to images.
         # The batch size is n_way * (k_shot + k_query).
         
-        optimizer.zero_grad()
         loss, acc = model.proto_loss(data, args.n_way, args.k_shot, args.k_query)
+        
+        # Normalize loss by meta_batch_size
+        loss = loss / args.meta_batch_size
         loss.backward()
         
-        if masks is not None:
-            apply_mask_grads(model.backbone, masks)
-            
-        optimizer.step()
+        if (i + 1) % args.meta_batch_size == 0 or (i + 1) == len(loader):
+            if masks is not None:
+                apply_mask_grads(model.backbone, masks)
+                
+            optimizer.step()
+            optimizer.zero_grad()
         
-        losses.update(loss.item(), 1)
+        # Multiply loss back for logging
+        losses.update(loss.item() * args.meta_batch_size, 1)
         accs.update(acc.item(), 1)
         
+        # Measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+        
         if (i + 1) % args.print_freq == 0:
-            logger.info(f'Epoch: [{epoch}][{i+1}/{len(loader)}]\tLoss {losses.val:.4f} ({losses.avg:.4f})\tAcc {accs.val:.3f} ({accs.avg:.3f})')
+            logger.info(f'Epoch: [{epoch}][{i+1}/{len(loader)}]\t'
+                        f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                        f'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                        f'Loss {losses.val:.4f} ({losses.avg:.4f})\t'
+                        f'Acc {accs.val:.3f} ({accs.avg:.3f})')
             
     return losses.avg, accs.avg
 
@@ -83,15 +108,15 @@ def main():
     # Dataset & Dataloader
     train_set = MiniImageNet(args.data_root, mode='train', transform=get_transforms('train'))
     train_sampler = CategoriesSampler(train_set.label_to_indices, args.episodes, args.n_way, args.k_shot + args.k_query)
-    train_loader = DataLoader(train_set, batch_sampler=train_sampler, num_workers=4, pin_memory=True)
+    train_loader = DataLoader(train_set, batch_sampler=train_sampler, num_workers=args.num_workers, pin_memory=True)
     
     val_set = MiniImageNet(args.data_root, mode='val', transform=get_transforms('val'))
     val_sampler = CategoriesSampler(val_set.label_to_indices, args.episodes, args.n_way, args.k_shot + args.k_query)
-    val_loader = DataLoader(val_set, batch_sampler=val_sampler, num_workers=4, pin_memory=True)
+    val_loader = DataLoader(val_set, batch_sampler=val_sampler, num_workers=args.num_workers, pin_memory=True)
     
     test_set = MiniImageNet(args.data_root, mode='test', transform=get_transforms('test'))
-    test_sampler = CategoriesSampler(test_set.label_to_indices, 600, args.n_way, args.k_shot + args.k_query) # 600 episodes for test
-    test_loader = DataLoader(test_set, batch_sampler=test_sampler, num_workers=4, pin_memory=True)
+    test_sampler = CategoriesSampler(test_set.label_to_indices, args.test_episodes, args.n_way, args.k_shot + args.k_query) # args.test_episodes for test
+    test_loader = DataLoader(test_set, batch_sampler=test_sampler, num_workers=args.num_workers, pin_memory=True)
     
     # Model
     if args.backbone == 'conv4':
@@ -117,19 +142,23 @@ def main():
     best_acc = 0
     for epoch in range(args.epochs):
         train_loss, train_acc = train_epoch(model, train_loader, optimizer, epoch, args, logger)
-        val_acc, val_h = evaluate(model, val_loader, args)
-        scheduler.step()
         
-        logger.info(f'Epoch {epoch}: Train Loss {train_loss:.4f} Acc {train_acc:.2f} | Val Acc {val_acc:.2f} +/- {val_h:.2f}')
-        
-        is_best = val_acc > best_acc
-        best_acc = max(val_acc, best_acc)
-        save_checkpoint({
-            'epoch': epoch + 1,
-            'state_dict': model.state_dict(),
-            'best_acc': best_acc,
-            'optimizer': optimizer.state_dict(),
-        }, is_best, filename='checkpoint_dense.pth', best_filename='model_dense_best.pth', folder=args.output_dir)
+        if (epoch + 1) % 5 == 0 or (epoch + 1) == args.epochs:
+            val_acc, val_h = evaluate(model, val_loader, args)
+            
+            is_best = val_acc > best_acc
+            best_acc = max(val_acc, best_acc)
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'best_acc': best_acc,
+                'optimizer': optimizer.state_dict(),
+            }, is_best, filename='checkpoint_dense.pth', best_filename='model_dense_best.pth', folder=args.output_dir)
+            
+            logger.info(f'Epoch {epoch}: Train Loss {train_loss:.4f} Acc {train_acc:.2f} | Val Acc {val_acc:.2f} +/- {val_h:.2f}')
+        else:
+            scheduler.step() # Step scheduler even if val skipped (usually based on epoch)
+            logger.info(f'Epoch {epoch}: Train Loss {train_loss:.4f} Acc {train_acc:.2f}')
         
     # Load best dense model
     checkpoint = torch.load(os.path.join(args.output_dir, 'model_dense_best.pth'), weights_only=False)
@@ -165,14 +194,19 @@ def main():
         best_acc_pruned = 0
         for epoch in range(args.epochs):
             train_loss, train_acc = train_epoch(model, train_loader, optimizer, epoch, args, logger, masks=masks)
-            val_acc, val_h = evaluate(model, val_loader, args)
+            
+            if (epoch + 1) % 5 == 0 or (epoch + 1) == args.epochs:
+                val_acc, val_h = evaluate(model, val_loader, args)
+                
+                if val_acc > best_acc_pruned:
+                    best_acc_pruned = val_acc
+                    torch.save(model.state_dict(), os.path.join(args.output_dir, f'model_subnet_{ratio}.pth'))
+                    
+                logger.info(f'[{name}] Epoch {epoch}: Train Acc {train_acc:.2f} | Val Acc {val_acc:.2f} +/- {val_h:.2f}')
+            else:
+                logger.info(f'[{name}] Epoch {epoch}: Train Acc {train_acc:.2f}')
+                
             scheduler.step()
-            
-            logger.info(f'[{name}] Epoch {epoch}: Train Acc {train_acc:.2f} | Val Acc {val_acc:.2f} +/- {val_h:.2f}')
-            
-            if val_acc > best_acc_pruned:
-                best_acc_pruned = val_acc
-                torch.save(model.state_dict(), os.path.join(args.output_dir, f'model_subnet_{ratio}.pth'))
                 
         # Test Pruned Model
         model.load_state_dict(torch.load(os.path.join(args.output_dir, f'model_subnet_{ratio}.pth'), weights_only=False))

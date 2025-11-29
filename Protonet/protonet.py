@@ -16,7 +16,7 @@ class ProtoNet(nn.Module):
         """
         # Extract features
         z = self.backbone(x, is_feat=True) # (batch_size, feat_dim)
-        z = F.normalize(z, p=2, dim=1)
+        # z = F.normalize(z, p=2, dim=1) # Removed normalization
         
         # Reshape to (n_way, k_shot + k_query, feat_dim)
         z = z.view(n_way, k_shot + k_query, -1)
@@ -28,13 +28,13 @@ class ProtoNet(nn.Module):
         # Calculate prototypes
         prototypes = support.mean(dim=1) # (n_way, feat_dim)
         
-        # Calculate distances (Euclidean)
+        # Calculate distances (Squared Euclidean)
         # query: (n_way, k_query, feat_dim) -> (n_way * k_query, feat_dim)
         query = query.contiguous().view(n_way * k_query, -1)
         
         # prototypes: (n_way, feat_dim)
         # dists: (n_way * k_query, n_way)
-        dists = torch.cdist(query, prototypes)
+        dists = torch.cdist(query, prototypes).pow(2) # Squared Euclidean
         
         # Calculate Logits (negative distance)
         logits = -dists

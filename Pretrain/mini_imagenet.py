@@ -14,18 +14,14 @@ def get_transforms(mode='train'):
     
     if mode == 'train':
         return transforms.Compose([
-            transforms.Resize(84),
-            transforms.CenterCrop(84), 
-            transforms.RandomResizedCrop(84),
-            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
+            transforms.RandomResizedCrop(84), 
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean, std)
         ])
     else:
         return transforms.Compose([
-            transforms.Resize(92),
-            transforms.CenterCrop(84),
+            transforms.Resize((84, 84)),
             transforms.ToTensor(),
             transforms.Normalize(mean, std)
         ])
