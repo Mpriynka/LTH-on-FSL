@@ -2,4 +2,4 @@ venv/
 __pycache__/
 Datasets/
 results/
-checkpoints/
+good_checkpoints/
